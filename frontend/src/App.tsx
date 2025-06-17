@@ -1,14 +1,10 @@
-// src/App.tsx
-
+// Import necessary React hooks and components
 import React, { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import ReactPaginate from 'react-paginate';
-import './App.css'; // Optional: for basic styling
+import './App.css';
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 1) Define TypeScript interfaces for our data
-// ─────────────────────────────────────────────────────────────────────────────
+// Define TypeScript interfaces for data structures
 interface User {
   id: number;
   name: string;
@@ -21,53 +17,41 @@ interface PaginatedResponse {
   total: number;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 2) Constants
-// ─────────────────────────────────────────────────────────────────────────────
-const BACKEND_BASE = 'http://localhost:5000'; 
-const PAGE_LIMIT = 10; // number of users per page
+// Constants for API configuration
+const BACKEND_BASE = 'http://localhost:5000'; // Base URL for backend API
+const PAGE_LIMIT = 10; // Number of users per page
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 3) App Component
-// ─────────────────────────────────────────────────────────────────────────────
 const App: React.FC = () => {
-  // ────────────────────────────────────────────────────────────────────────────
-  // 3.1) Component State
-  // ────────────────────────────────────────────────────────────────────────────
-  // current page index (0-based for react-paginate)
+  // ─── STATE MANAGEMENT ─────────────────────────────────────────────────
+
+  // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(0);
 
-  // current page's users
+  // User data state
   const [users, setUsers] = useState<User[]>([]);
-
-  // total number of users in the entire database (for pagination)
   const [totalUsers, setTotalUsers] = useState<number>(0);
 
-  // If user has not clicked “Select All across every page,” we store exact IDs here:
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  // Bulk action state
+  const [bulkAction, setBulkAction] = useState<'activate' | 'inactivate'>('inactivate');
 
-  // When this flag is true, we interpret “every user in the DB is selected”
-  const [isAllSelected, setIsAllSelected] = useState<boolean>(false);
+  // Selection state (simplified model)
+  const [selectionMode, setSelectionMode] = useState<'none' | 'partial' | 'all'>('none');
+  const [excludedIds, setExcludedIds] = useState<Set<number>>(new Set());
+  const [includedIds, setIncludedIds] = useState<Set<number>>(new Set());
 
-  // Only used when isAllSelected === true:
-  // Holds the IDs the user explicitly “deselected” after clicking “Select All.”
-  const [unselectedIds, setUnselectedIds] = useState<Set<number>>(new Set());
-
-  // A ref to track whether the header checkbox should be rendered as indeterminate
+  // Ref for header checkbox (to set indeterminate state)
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // 3.2) Fetch one page of data whenever currentPage changes
-  // ────────────────────────────────────────────────────────────────────────────
+  // ─── DATA FETCHING ────────────────────────────────────────────────────
+
+  // Fetch users when current page changes
   useEffect(() => {
     const fetchPage = async () => {
       try {
         const skip = currentPage * PAGE_LIMIT;
-        // Assuming your Flask backend responds with JSON: { items: User[], total: number }
         const res = await axios.get<PaginatedResponse>(`${BACKEND_BASE}/users`, {
           params: { skip, limit: PAGE_LIMIT },
         });
-        console.log('Fetched users:', res.data.items);
         setUsers(res.data.items);
         setTotalUsers(res.data.total);
       } catch (err) {
@@ -78,163 +62,163 @@ const App: React.FC = () => {
     fetchPage();
   }, [currentPage]);
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // 3.3) Helper: Determine if a given row’s checkbox is checked
-  // ────────────────────────────────────────────────────────────────────────────
-  const isRowChecked = (id: number): boolean => {
-    if (isAllSelected) {
-      // “All” mode: a row is checked unless it’s explicitly in unselectedIds
-      return !unselectedIds.has(id);
-    } else {
-      // “Normal” mode: only checked if in selectedIds
-      return selectedIds.has(id);
-    }
-  };
+  // ─── SELECTION LOGIC ──────────────────────────────────────────────────
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // 3.4) When user toggles a single row checkbox
-  // ────────────────────────────────────────────────────────────────────────────
+  // Toggle selection for a single row
   const toggleRow = (id: number) => {
-    if (isAllSelected) {
-      // In “all selected” mode, toggling removes/adds from unselectedIds
-      const newUnselected = new Set(unselectedIds);
-      if (newUnselected.has(id)) {
-        newUnselected.delete(id);
+    if (selectionMode === 'all') {
+      // Toggle exclusion in "select all" mode
+      const newExcluded = new Set(excludedIds);
+      if (newExcluded.has(id)) {
+        newExcluded.delete(id);
       } else {
-        newUnselected.add(id);
+        newExcluded.add(id);
       }
-      setUnselectedIds(newUnselected);
+      setExcludedIds(newExcluded);
     } else {
-      // Normal mode: toggle in selectedIds
-      const newSelected = new Set(selectedIds);
-      if (newSelected.has(id)) {
-        newSelected.delete(id);
+      // Toggle inclusion in "partial select" mode
+      const newIncluded = new Set(includedIds);
+      if (newIncluded.has(id)) {
+        newIncluded.delete(id);
       } else {
-        newSelected.add(id);
+        newIncluded.add(id);
       }
-      setSelectedIds(newSelected);
+      setIncludedIds(newIncluded);
 
-      // If the user individually toggles when isAllSelected=true, we want to turn off “all.”
-      // But here we’re not in isAllSelected, so no change needed to that flag.
+      // Update selection mode based on selections
+      setSelectionMode(newIncluded.size > 0 ? 'partial' : 'none');
     }
   };
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // 3.5) When user clicks the header “Select All” checkbox
-  // ────────────────────────────────────────────────────────────────────────────
+  // Toggle "select all" mode
   const toggleSelectAll = () => {
-    if (isAllSelected) {
-      // Unset “Select All” mode entirely
-      setIsAllSelected(false);
-      setUnselectedIds(new Set());
-      setSelectedIds(new Set());
+    if (selectionMode === 'all') {
+      // Clear all selections
+      setSelectionMode('none');
+      setExcludedIds(new Set());
+      setIncludedIds(new Set());
     } else {
-      // Enter “Select All” mode: clear any individual selections
-      setIsAllSelected(true);
-      setUnselectedIds(new Set());
-      setSelectedIds(new Set());
+      // Select all users across all pages
+      setSelectionMode('all');
+      setIncludedIds(new Set());
     }
   };
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // 3.6) Compute header checkbox state (checked / indeterminate)
-  // ────────────────────────────────────────────────────────────────────────────
+  // Calculate which IDs are currently selected
+  const getSelectedIds = (): number[] => {
+    if (selectionMode === 'all') {
+      // Return all IDs except explicitly excluded
+      return users
+        .filter(user => !excludedIds.has(user.id))
+        .map(user => user.id);
+    } else if (selectionMode === 'partial') {
+      // Return explicitly included IDs
+      return Array.from(includedIds);
+    }
+    return []; // No selection
+  };
+
+  // Determine if a row should be checked
+  const isRowChecked = (id: number): boolean => {
+    if (selectionMode === 'all') return !excludedIds.has(id);
+    if (selectionMode === 'partial') return includedIds.has(id);
+    return false;
+  };
+
+  // Update header checkbox state (checked/indeterminate)
   useEffect(() => {
     if (!headerCheckboxRef.current) return;
 
-    const currentPageIds = users.map((u) => u.id);
+    const currentPageIds = users.map(user => user.id);
 
-    if (isAllSelected) {
-      // If “all” mode is ON:
-      //  checked if none of the current page IDs are in unselectedIds
-      const allOnThisPageSelected = currentPageIds.every((id) => !unselectedIds.has(id));
-      const someUnselected = currentPageIds.some((id) => unselectedIds.has(id));
-      const someStillSelected = currentPageIds.some((id) => !unselectedIds.has(id));
+    if (selectionMode === 'all') {
+      // In "all" mode: checked if no exclusions on current page
+      const allChecked = currentPageIds.every(id => !excludedIds.has(id));
+      const someUnchecked = currentPageIds.some(id => excludedIds.has(id));
 
-      headerCheckboxRef.current.checked = allOnThisPageSelected;
-      headerCheckboxRef.current.indeterminate = someUnselected && someStillSelected;
+      headerCheckboxRef.current.checked = allChecked;
+      headerCheckboxRef.current.indeterminate = !allChecked && someUnchecked;
+    } else if (selectionMode === 'partial') {
+      // In "partial" mode: checked if all current page IDs selected
+      const allChecked = currentPageIds.every(id => includedIds.has(id));
+      const someChecked = currentPageIds.some(id => includedIds.has(id));
+
+      headerCheckboxRef.current.checked = allChecked;
+      headerCheckboxRef.current.indeterminate = someChecked && !allChecked;
     } else {
-      // Normal mode:
-      const allOnThisPageSelected = currentPageIds.every((id) => selectedIds.has(id));
-      const someSelected = currentPageIds.some((id) => selectedIds.has(id));
-      const someUnselected = currentPageIds.some((id) => !selectedIds.has(id));
-
-      headerCheckboxRef.current.checked = allOnThisPageSelected;
-      headerCheckboxRef.current.indeterminate = someSelected && someUnselected;
+      // No selections
+      headerCheckboxRef.current.checked = false;
+      headerCheckboxRef.current.indeterminate = false;
     }
-  }, [users, isAllSelected, selectedIds, unselectedIds]);
+  }, [users, selectionMode, includedIds, excludedIds]);
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // 3.7) When user clicks the pagination controls
-  // ────────────────────────────────────────────────────────────────────────────
+  // ─── ACTION HANDLERS ──────────────────────────────────────────────────
+
+  // Handle page navigation
   const handlePageClick = (selectedItem: { selected: number }) => {
     setCurrentPage(selectedItem.selected);
-    // Note: We do NOT clear any of our selection state when changing pages.
-    //       That way, selectedIds / unselectedIds persist across page changes.
   };
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // 3.8) Bulk Update Action State and Handler
-  // ────────────────────────────────────────────────────────────────────────────
-  const [bulkAction, setBulkAction] = useState<'activate' | 'inactivate'>('inactivate');
-
+  // Handle bulk update action
   const handleBulkUpdate = async () => {
+    const selectedIds = getSelectedIds();
+    if (selectedIds.length === 0) return;
+
     try {
       const activeValue = bulkAction === 'activate';
-      if (isAllSelected) {
-        const payload = {
-          all: true,
-          excludeIds: Array.from(unselectedIds),
-          payload: { active: activeValue },
-        };
-        await axios.put(`${BACKEND_BASE}/users/bulk-update`, payload);
-      } else {
-        const payload = {
-          all: false,
-          ids: Array.from(selectedIds),
-          payload: { active: activeValue },
-        };
-        await axios.put(`${BACKEND_BASE}/users/bulk-update`, payload);
-      }
 
-      alert('Bulk update successful');
-      setIsAllSelected(false);
-      setSelectedIds(new Set());
-      setUnselectedIds(new Set());
+      await axios.put(`${BACKEND_BASE}/users/bulk-update`, {
+        user_ids: selectedIds,
+        payload: { active: activeValue }
+      });
+
+      // Refresh data and reset selections
       const skip = currentPage * PAGE_LIMIT;
       const res = await axios.get<PaginatedResponse>(`${BACKEND_BASE}/users`, {
         params: { skip, limit: PAGE_LIMIT },
       });
       setUsers(res.data.items);
-      setTotalUsers(res.data.total);
+
+      setSelectionMode('none');
+      setExcludedIds(new Set());
+      setIncludedIds(new Set());
+
+      alert(`Updated ${selectedIds.length} users successfully!`);
     } catch (err) {
       console.error('Bulk update error:', err);
       alert('Bulk update failed');
     }
   };
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // 3.9) Check if a user is “selected” for the final count display
-  // ────────────────────────────────────────────────────────────────────────────
-  const totalSelectedCount = () => {
-    if (isAllSelected) {
-      // Total = totalUsers in DB minus how many are explicitly unselected
-      return totalUsers - unselectedIds.size;
-    } else {
-      return selectedIds.size;
+  // Handle individual user status toggle
+  const toggleUserStatus = async (id: number, currentStatus: boolean) => {
+    try {
+      await axios.put(`${BACKEND_BASE}/users/bulk-update`, {
+        user_ids: [id],
+        payload: { active: !currentStatus }
+      });
+
+      // Refresh current page
+      const skip = currentPage * PAGE_LIMIT;
+      const res = await axios.get<PaginatedResponse>(`${BACKEND_BASE}/users`, {
+        params: { skip, limit: PAGE_LIMIT },
+      });
+      setUsers(res.data.items);
+    } catch (err) {
+      alert('Failed to update user status');
     }
   };
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // 4) Render JSX
-  // ────────────────────────────────────────────────────────────────────────────
+  // ─── RENDER LOGIC ─────────────────────────────────────────────────────
+
+  // Calculate selected count for display
+  const selectedCount = getSelectedIds().length;
+
   return (
     <div className="container" style={{ padding: '1rem' }}>
-      <h2>User List & Bulk Update Demo</h2>
+      <h2>User Management</h2>
 
-      {/* ───────────────────────────────────────────────────────────────────────── 
-            4.1) “Select All” checkbox (select across every page)
-      ───────────────────────────────────────────────────────────────────────── */}
+      {/* Selection Header */}
       <div style={{ marginBottom: '0.5rem' }}>
         <label>
           <input
@@ -246,85 +230,48 @@ const App: React.FC = () => {
         </label>
       </div>
 
-      {/* ───────────────────────────────────────────────────────────────────────── 
-            4.2) Table of current page’s users
-      ───────────────────────────────────────────────────────────────────────── */}
-      <table
-        style={{
-          width: '100%',
-          borderCollapse: 'collapse',
-          marginBottom: '1rem',
-        }}
-      >
+      {/* Users Table */}
+      <table>
         <thead>
           <tr>
-            <th style={{ border: '1px solid #ddd', padding: '0.5rem' }}>Select</th>
-            <th style={{ border: '1px solid #ddd', padding: '0.5rem' }}>Name</th>
-            <th style={{ border: '1px solid #ddd', padding: '0.5rem' }}>Email</th>
-            <th style={{ border: '1px solid #ddd', padding: '0.5rem' }}>Status</th>
+            <th>Select</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>
           {users.map((user) => (
             <tr key={user.id}>
-              <td style={{ border: '1px solid #ddd', padding: '0.5rem', textAlign: 'center' }}>
+              <td>
                 <input
                   type="checkbox"
                   checked={isRowChecked(user.id)}
                   onChange={() => toggleRow(user.id)}
                 />
               </td>
-              <td style={{ border: '1px solid #ddd', padding: '0.5rem' }}>{user.name}</td>
-              <td style={{ border: '1px solid #ddd', padding: '0.5rem' }}>{user.email}</td>
-              <td style={{ border: '1px solid #ddd', padding: '0.5rem', textAlign: 'center' }}>
+              <td>{user.name}</td>
+              <td>{user.email}</td>
+              <td>
                 <button
+                  onClick={() => toggleUserStatus(user.id, user.active)}
                   style={{
-                    padding: '0.25rem 0.75rem',
                     backgroundColor: user.active ? '#dc3545' : '#28a745',
                     color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
                   }}
-                  onClick={async () => {
-                    try {
-                      await axios.put(`${BACKEND_BASE}/users/bulk-update`, {
-                        all: false,
-                        ids: [user.id],
-                        payload: { active: !user.active },
-                      });
-                      // Refresh users after update
-                      const skip = currentPage * PAGE_LIMIT;
-                      const res = await axios.get<PaginatedResponse>(`${BACKEND_BASE}/users`, {
-                        params: { skip, limit: PAGE_LIMIT },
-                      });
-                      setUsers(res.data.items);
-                      setTotalUsers(res.data.total);
-                    } catch (err) {
-                      alert('Failed to update user status');
-                    }
-                  }}
-                  title={user.active ? 'Inactivate' : 'Activate'}
                 >
-                  {user.active ? 'Inactivate' : 'Activate'}
+                  {user.active ? 'Deactivate' : 'Activate'}
                 </button>
-                <span style={{ marginLeft: '0.5rem' }}>{user.active ? '✅' : '❌'}</span>
+                <span style={{ marginLeft: '0.5rem' }}>
+                  {user.active ? '✅' : '❌'}
+                </span>
               </td>
             </tr>
           ))}
-          {users.length === 0 && (
-            <tr>
-              <td colSpan={4} style={{ textAlign: 'center', padding: '1rem' }}>
-                No users found.
-              </td>
-            </tr>
-          )}
         </tbody>
       </table>
 
-      {/* ───────────────────────────────────────────────────────────────────────── 
-            4.3) Pagination Controls
-      ───────────────────────────────────────────────────────────────────────── */}
+      {/* Pagination */}
       <ReactPaginate
         pageCount={Math.ceil(totalUsers / PAGE_LIMIT)}
         pageRangeDisplayed={3}
@@ -335,31 +282,25 @@ const App: React.FC = () => {
         forcePage={currentPage}
       />
 
-      {/* ───────────────────────────────────────────────────────────────────────── 
-            4.4) Bulk Update Button & Count Display
-      ───────────────────────────────────────────────────────────────────────── */}
-      <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+      {/* Bulk Actions */}
+      <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem' }}>
         <select
           value={bulkAction}
           onChange={e => setBulkAction(e.target.value as 'activate' | 'inactivate')}
-          style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc' }}
         >
           <option value="activate">Activate</option>
           <option value="inactivate">Inactivate</option>
         </select>
         <button
           onClick={handleBulkUpdate}
-          disabled={totalSelectedCount() === 0}
+          disabled={selectedCount === 0}
           style={{
-            padding: '0.5rem 1rem',
-            backgroundColor: totalSelectedCount() > 0 ? '#007bff' : '#ccc',
+            backgroundColor: selectedCount > 0 ? '#007bff' : '#ccc',
             color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: totalSelectedCount() > 0 ? 'pointer' : 'not-allowed',
           }}
         >
-          {bulkAction === 'activate' ? 'Activate' : 'Inactivate'} {totalSelectedCount()} User{totalSelectedCount() === 1 ? '' : 's'}
+          {bulkAction === 'activate' ? 'Activate' : 'Deactivate'}
+          {selectedCount} User{selectedCount !== 1 ? 's' : ''}
         </button>
       </div>
     </div>
